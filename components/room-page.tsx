@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { Clapperboard, Copy, RefreshCw, Users, Wifi, WifiOff, X } from 'lucide-react';
 import { toast } from 'sonner';
@@ -32,12 +32,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { VideoPlayer } from '@/components/video-player';
 import { VideoSourceDialog } from '@/components/video-source';
-import {
-  readJoinedRoomSession,
-  readPendingRoomJoin,
-  useRoom,
-  type RtcStatus,
-} from '@/hooks/use-room';
+import { type RtcStatus } from '@/hooks/use-room';
+import { useRoomContext } from '@/components/room-provider';
 import { getRequestErrorMessage } from '@/lib/client/http';
 
 const RTC_STATUS_MAP: Record<RtcStatus, { label: string; variant: 'outline' | 'secondary' | 'destructive' }> = {
@@ -57,8 +53,6 @@ export function RoomPage({ roomCode }: RoomPageProps) {
     state,
     savedName,
     updateDisplayName,
-    handleJoin,
-    resumeJoin,
     handleLeave,
     setVideoSource,
     retryConnection,
@@ -66,16 +60,16 @@ export function RoomPage({ roomCode }: RoomPageProps) {
     requestPlay,
     requestPause,
     requestSeek,
-  } = useRoom();
+    joinError,
+    retryJoin,
+    isAutoJoining,
+  } = useRoomContext();
 
-  const [isJoining, setIsJoining] = useState(false);
-  const [joinError, setJoinError] = useState<string | null>(null);
   const [isRetrying, setIsRetrying] = useState(false);
   const [isLeaving, setIsLeaving] = useState(false);
   const [leaveDialogOpen, setLeaveDialogOpen] = useState(false);
   const [nameDialogOpen, setNameDialogOpen] = useState(false);
   const [nameDraft, setNameDraft] = useState('');
-  const hasAutoJoinedRef = useRef(false);
   const prevRtcStatus = useRef<RtcStatus>('idle');
 
   const normalizedName = savedName.trim();
@@ -99,51 +93,6 @@ export function RoomPage({ roomCode }: RoomPageProps) {
       });
     }
   }, [state.rtcStatus]);
-
-  const attemptAutoJoin = useCallback(async () => {
-    setJoinError(null);
-    setIsJoining(true);
-    const pending = readPendingRoomJoin(roomCode);
-    const displayName = pending?.displayName.trim() || normalizedName;
-
-    try {
-      const joinedSession = readJoinedRoomSession(roomCode);
-      if (joinedSession) {
-        resumeJoin(joinedSession.roomCommand, joinedSession.createdNew, joinedSession.displayName);
-        return;
-      }
-
-      let lastError: unknown;
-      for (let attempt = 0; attempt < 3; attempt++) {
-        try {
-          await handleJoin(roomCode, displayName, pending?.peerId);
-          return;
-        } catch (error) {
-          lastError = error;
-          if (attempt < 2) {
-            await new Promise((resolve) => setTimeout(resolve, 400 * (attempt + 1)));
-          }
-        }
-      }
-      throw lastError;
-    } catch (error) {
-      const message = getRequestErrorMessage(error);
-      setJoinError(message);
-      toast.error(message);
-    } finally {
-      setIsJoining(false);
-    }
-  }, [handleJoin, normalizedName, resumeJoin, roomCode]);
-
-  useEffect(() => {
-    if (!hasName || state.phase !== 'idle' || hasAutoJoinedRef.current) return;
-    hasAutoJoinedRef.current = true;
-    void attemptAutoJoin();
-  }, [attemptAutoJoin, hasName, state.phase]);
-
-  const onRetryJoin = () => {
-    void attemptAutoJoin();
-  };
 
   const onRetry = async () => {
     setIsRetrying(true);
@@ -182,7 +131,8 @@ export function RoomPage({ roomCode }: RoomPageProps) {
     toast.success('房间链接已复制');
   };
 
-  const handleConfirmName = () => {
+  const handleConfirmName = (event: FormEvent) => {
+    event.preventDefault();
     const trimmed = nameDraft.trim();
     if (!trimmed) {
       toast.error('请先设置昵称');
@@ -205,7 +155,7 @@ export function RoomPage({ roomCode }: RoomPageProps) {
 
   const { phase, roomId, members, isHost, signalingConnected, rtcStatus, videoSrc } = state;
   const isJoined = phase === 'joined';
-  const loading = phase === 'joining' || isJoining;
+  const loading = phase === 'joining';
   const rtcFailed = rtcStatus === 'failed';
   const rtcInfo = RTC_STATUS_MAP[rtcStatus];
 
@@ -221,19 +171,22 @@ export function RoomPage({ roomCode }: RoomPageProps) {
             <DialogTitle>设置昵称</DialogTitle>
             <DialogDescription>进入房间前，请先设置昵称。</DialogDescription>
           </DialogHeader>
-          <div className="space-y-2">
-            <Label htmlFor="required-display-name">昵称</Label>
-            <Input
-              id="required-display-name"
-              value={nameDraft}
-              onChange={(event) => setNameDraft(event.target.value)}
-              placeholder="请输入昵称"
-              maxLength={24}
-            />
-          </div>
-          <DialogFooter>
-            <Button onClick={handleConfirmName}>确认</Button>
-          </DialogFooter>
+          <form onSubmit={handleConfirmName} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="required-display-name">昵称</Label>
+              <Input
+                id="required-display-name"
+                value={nameDraft}
+                onChange={(event) => setNameDraft(event.target.value)}
+                placeholder="请输入昵称"
+                maxLength={24}
+                autoFocus
+              />
+            </div>
+            <DialogFooter>
+              <Button type="submit">确认</Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
 
@@ -359,8 +312,8 @@ export function RoomPage({ roomCode }: RoomPageProps) {
                 <p className="text-xs text-muted-foreground">{joinError}</p>
               </div>
               <div className="flex gap-2">
-                <Button variant="outline" size="sm" onClick={onRetryJoin} disabled={isJoining}>
-                  {isJoining ? '重试中…' : '重试'}
+                <Button variant="outline" size="sm" onClick={retryJoin} disabled={isAutoJoining}>
+                  {isAutoJoining ? '重试中…' : '重试'}
                 </Button>
                 <Button variant="ghost" size="sm" onClick={() => router.replace('/')}>
                   返回首页

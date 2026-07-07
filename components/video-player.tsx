@@ -4,7 +4,10 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Maximize, Minimize, Pause, Play, Volume2, VolumeX } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
+import { Progress } from '@/components/ui/progress';
 import { Label } from '@/components/ui/label';
+
+const PROGRESS_UPDATE_INTERVAL_MS = 500;
 
 function formatTime(seconds: number) {
   if (!Number.isFinite(seconds) || seconds < 0) return '00:00';
@@ -34,37 +37,50 @@ export function VideoPlayer({
 }: VideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const timeDisplayRef = useRef<HTMLSpanElement>(null);
+  const lastProgressUpdateRef = useRef(0);
+  const seekingRef = useRef(false);
   const [playing, setPlaying] = useState(false);
-  const [currentTime, setCurrentTime] = useState(0);
+  const [progress, setProgress] = useState(0);
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(80);
   const [muted, setMuted] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
-  // Expose video ref to parent
   useEffect(() => {
     onVideoRef?.(videoRef.current);
     return () => onVideoRef?.(null);
   }, [onVideoRef]);
 
-  // Set src on video element
+  // Track fullscreen state changes (e.g. when the user presses ESC to exit
+  // fullscreen, or switches fullscreen via browser controls).
+  useEffect(() => {
+    const onFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+    document.addEventListener('fullscreenchange', onFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', onFullscreenChange);
+  }, []);
+
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
 
     if (src instanceof MediaStream) {
       video.srcObject = src;
-      video.src = '';
+      video.removeAttribute('src');
+      video.load();
     } else if (typeof src === 'string' && src) {
       video.srcObject = null;
       video.src = src;
+      video.load();
     } else {
       video.srcObject = null;
-      video.src = '';
+      video.removeAttribute('src');
+      video.load();
     }
   }, [src]);
 
-  // Sync volume
   useEffect(() => {
     const video = videoRef.current;
     if (video) {
@@ -75,7 +91,20 @@ export function VideoPlayer({
 
   const handleTimeUpdate = useCallback(() => {
     const video = videoRef.current;
-    if (video) setCurrentTime(video.currentTime);
+    if (!video) return;
+
+    if (timeDisplayRef.current) {
+      timeDisplayRef.current.textContent = `${formatTime(video.currentTime)} / ${formatTime(video.duration)}`;
+    }
+
+    // Skip progress updates while the host is dragging the seek slider —
+    // otherwise the video's currentTime overwrites the slider position.
+    if (seekingRef.current) return;
+
+    const now = Date.now();
+    if (now - lastProgressUpdateRef.current < PROGRESS_UPDATE_INTERVAL_MS) return;
+    lastProgressUpdateRef.current = now;
+    setProgress(video.duration > 0 ? (video.currentTime / video.duration) * 100 : 0);
   }, []);
 
   const handleLoadedMetadata = useCallback(() => {
@@ -96,9 +125,15 @@ export function VideoPlayer({
     }
   };
 
-  const handleSeek = (value: number[]) => {
+  const handleSeekChange = (value: number[]) => {
+    seekingRef.current = true;
+    setProgress(value[0]);
+  };
+
+  const handleSeekCommit = (value: number[]) => {
     const posMs = Math.round((value[0] / 100) * duration * 1000);
     onSeek?.(posMs);
+    seekingRef.current = false;
   };
 
   const handleToggleMute = () => setMuted((m) => !m);
@@ -112,14 +147,12 @@ export function VideoPlayer({
     if (!containerRef.current) return;
     if (document.fullscreenElement) {
       await document.exitFullscreen();
-      setIsFullscreen(false);
     } else {
       await containerRef.current.requestFullscreen();
-      setIsFullscreen(true);
     }
+    // State is kept in sync via the fullscreenchange listener above.
   };
 
-  const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
   const hasSrc = !!src;
   const controlsDisabled = !hasSrc || !!disabled;
 
@@ -144,31 +177,42 @@ export function VideoPlayer({
 
       <div className="space-y-4 rounded-lg border p-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          {isHost && (
-            <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2">
+            {isHost ? (
               <Button size="sm" onClick={handleTogglePlay} disabled={controlsDisabled}>
                 {playing ? <Pause className="size-4" /> : <Play className="size-4" />}
                 {playing ? '暂停' : '播放'}
               </Button>
-              <Button size="icon-sm" variant="ghost" onClick={handleFullscreen} disabled={controlsDisabled}>
-                {isFullscreen ? <Minimize className="size-4" /> : <Maximize className="size-4" />}
-              </Button>
-            </div>
-          )}
-          <div className="text-sm text-muted-foreground">
-            {formatTime(currentTime)} / {formatTime(duration)}
+            ) : (
+              <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                {playing ? <Play className="size-4" /> : <Pause className="size-4" />}
+                {playing ? '播放中' : '已暂停'}
+              </span>
+            )}
+            <Button size="sm" variant="ghost" onClick={handleFullscreen} disabled={controlsDisabled}>
+              {isFullscreen ? <Minimize className="size-4" /> : <Maximize className="size-4" />}
+              {isFullscreen ? '退出全屏' : '全屏'}
+            </Button>
           </div>
+          <span ref={timeDisplayRef} className="text-sm text-muted-foreground">
+            00:00 / 00:00
+          </span>
         </div>
 
         <div className="space-y-2">
           <Label>播放进度</Label>
-          <Slider
-            value={[progress]}
-            max={100}
-            step={0.1}
-            onValueCommit={isHost ? handleSeek : undefined}
-            disabled={!hasSrc}
-          />
+          {isHost ? (
+            <Slider
+              value={[progress]}
+              max={100}
+              step={0.1}
+              onValueChange={handleSeekChange}
+              onValueCommit={handleSeekCommit}
+              disabled={!hasSrc}
+            />
+          ) : (
+            <Progress value={progress} className={!hasSrc ? 'opacity-50' : undefined} />
+          )}
         </div>
 
         <div className="space-y-2">

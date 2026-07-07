@@ -23,6 +23,7 @@ export class PlaybackSync {
   private syncTimer: ReturnType<typeof setInterval> | null = null;
   private suppressLocalEvents = false;
   private currentSource: VideoSource | null = null;
+  private pendingPositionMs: number | null = null;
 
   constructor(rtc: WebRTCManager, isHost: boolean) {
     this.rtc = rtc;
@@ -56,6 +57,26 @@ export class PlaybackSync {
   bindVideo(video: HTMLVideoElement) {
     this.unbindVideo();
     this.video = video;
+
+    // When a new member joins, applyPosition may be called before the video
+    // metadata has loaded (duration is NaN). The browser queues the seek, but
+    // as a safety net we also listen for loadedmetadata and re-apply the
+    // pending position if the queued seek didn't take effect.
+    const onLoadedMetadata = () => {
+      if (this.pendingPositionMs != null && Number.isFinite(video.duration)) {
+        const drift = Math.abs(video.currentTime * 1000 - this.pendingPositionMs);
+        if (drift > DRIFT_THRESHOLD_MS) {
+          this.suppressLocalEvents = true;
+          video.currentTime = this.pendingPositionMs / 1000;
+          requestAnimationFrame(() => {
+            this.suppressLocalEvents = false;
+          });
+        }
+        this.pendingPositionMs = null;
+      }
+    };
+    video.addEventListener('loadedmetadata', onLoadedMetadata);
+    this.cleanupFns.push(() => video.removeEventListener('loadedmetadata', onLoadedMetadata));
 
     if (this.isHost) {
       const onPlay = () => {
@@ -109,7 +130,7 @@ export class PlaybackSync {
    */
   requestPlay() {
     if (this.isHost) {
-      this.video?.play();
+      this.video?.play().catch(() => {});
     } else {
       this.rtc.sendToAll({
         type: 'play',
@@ -161,9 +182,12 @@ export class PlaybackSync {
       case 'play': {
         if (this.isHost) {
           this.applyPosition(msg.positionMs);
-          this.video?.play();
+          this.video?.play().catch(() => {});
         } else {
-          this.applyPosition(msg.positionMs);
+          // Always seek to the exact position when the host resumes playback.
+          // applyPosition skips seeking when drift is below DRIFT_THRESHOLD_MS,
+          // which can leave the member slightly ahead/behind the host.
+          this.seekExact(msg.positionMs);
           this.emit('remote-play', msg.positionMs);
         }
         break;
@@ -173,7 +197,9 @@ export class PlaybackSync {
           this.applyPosition(msg.positionMs);
           this.video?.pause();
         } else {
-          this.applyPosition(msg.positionMs);
+          // Always seek to the exact position when the host pauses so that
+          // all members freeze on the same frame as the host.
+          this.seekExact(msg.positionMs);
           this.emit('remote-pause', msg.positionMs);
         }
         break;
@@ -227,7 +253,16 @@ export class PlaybackSync {
   }
 
   private applyPosition(positionMs: number) {
-    if (!this.video || !Number.isFinite(this.video.duration)) return;
+    if (!this.video) return;
+    // MediaStream (duration === Infinity) cannot be seeked — skip.
+    // URL sources may have NaN duration before metadata loads, but the
+    // browser queues the currentTime assignment and applies it once
+    // metadata is available. We also store a pending position as a
+    // safety net (applied in the loadedmetadata listener from bindVideo).
+    if (this.video.duration === Infinity) return;
+    if (!Number.isFinite(this.video.duration)) {
+      this.pendingPositionMs = positionMs;
+    }
     const drift = Math.abs(this.video.currentTime * 1000 - positionMs);
     if (drift > DRIFT_THRESHOLD_MS) {
       this.suppressLocalEvents = true;
@@ -236,6 +271,28 @@ export class PlaybackSync {
         this.suppressLocalEvents = false;
       });
     }
+  }
+
+  /**
+   * Seek to the exact position without a drift threshold.
+   *
+   * Used for discrete play/pause actions (not periodic sync) so that all
+   * peers land on the exact same frame as the host, regardless of how
+   * small the drift is.  applyPosition is still used for periodic
+   * sync-responses to avoid stuttering during normal playback.
+   */
+  private seekExact(positionMs: number) {
+    if (!this.video) return;
+    if (this.video.duration === Infinity) return;
+    if (!Number.isFinite(this.video.duration)) {
+      this.pendingPositionMs = positionMs;
+      return;
+    }
+    this.suppressLocalEvents = true;
+    this.video.currentTime = positionMs / 1000;
+    requestAnimationFrame(() => {
+      this.suppressLocalEvents = false;
+    });
   }
 
   private broadcastSyncState() {

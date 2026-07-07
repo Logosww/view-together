@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, type FormEvent } from 'react';
 import { LogIn, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -14,6 +14,7 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Spinner } from '@/components/ui/spinner';
 
 export type RoomLobbyProps = {
   displayName: string;
@@ -74,7 +75,8 @@ export function RoomLobby({
       .slice(0, 4);
   };
 
-  const handleConfirmJoin = () => {
+  const handleConfirmJoin = (event: FormEvent) => {
+    event.preventDefault();
     const trimmed = extractRoomCode(joinRoomId);
     if (!trimmed) return;
     onJoin(trimmed, displayName || 'Guest');
@@ -98,7 +100,7 @@ export function RoomLobby({
 
       <div className="flex flex-col gap-3 sm:flex-row">
         <Button onClick={handleCreate} disabled={loading}>
-          <Plus className="size-4" />
+          {isCreating ? <Spinner className="size-4" /> : <Plus className="size-4" />}
           {isCreating ? '创建中…' : '创建房间'}
         </Button>
 
@@ -114,23 +116,26 @@ export function RoomLobby({
               <DialogTitle>加入房间</DialogTitle>
               <DialogDescription>请输入房间编号后加入。</DialogDescription>
             </DialogHeader>
-            <div className="space-y-2">
-              <Label htmlFor="room-id-input">房间编号</Label>
-              <Input
-                id="room-id-input"
-                value={joinRoomId}
-                onChange={(e) => setJoinRoomId(e.target.value)}
-                placeholder="输入 4 位房间号或粘贴分享链接"
-              />
-            </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setJoinDialogOpen(false)}>
-                取消
-              </Button>
-              <Button onClick={handleConfirmJoin} disabled={isJoining}>
-                {isJoining ? '加入中…' : '加入房间'}
-              </Button>
-            </DialogFooter>
+            <form onSubmit={handleConfirmJoin} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="room-id-input">房间编号</Label>
+                <Input
+                  id="room-id-input"
+                  value={joinRoomId}
+                  onChange={(e) => setJoinRoomId(e.target.value)}
+                  placeholder="输入 4 位房间号或粘贴分享链接"
+                  autoFocus
+                />
+              </div>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setJoinDialogOpen(false)}>
+                  取消
+                </Button>
+                <Button type="submit" disabled={isJoining}>
+                  {isJoining ? '加入中…' : '加入房间'}
+                </Button>
+              </DialogFooter>
+            </form>
           </DialogContent>
         </Dialog>
       </div>

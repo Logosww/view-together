@@ -29,7 +29,7 @@ type PeerConnection = {
 
 export class WebRTCManager {
   private peers = new Map<string, PeerConnection>()
-  private listeners = new Map<EventName, Set<(...args: any[]) => void>>()
+  private listeners = new Map<EventName, Set<WebRTCManagerEvents[EventName]>>()
   private signaling: SignalingClient
   private localPeerId: string
   private localStream: MediaStream | null = null
@@ -53,7 +53,10 @@ export class WebRTCManager {
   }
 
   private emit<E extends EventName>(event: E, ...args: Parameters<WebRTCManagerEvents[E]>) {
-    this.listeners.get(event)?.forEach((fn) => fn(...args))
+    const fns = this.listeners.get(event) as Set<WebRTCManagerEvents[E]> | undefined
+    fns?.forEach((fn) => {
+      Reflect.apply(fn, undefined, args)
+    })
   }
 
   // ─── Public API ────────────────────────────────────────────────────────────

@@ -1,9 +1,9 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { SignalingClient } from '@/lib/client/signaling';
-import { WebRTCManager } from '@/lib/client/webrtc-manager';
-import { PlaybackSync } from '@/lib/client/playback-sync';
+import type { SignalingClient } from '@/lib/client/signaling';
+import type { WebRTCManager } from '@/lib/client/webrtc-manager';
+import type { PlaybackSync } from '@/lib/client/playback-sync';
 import {
   createRoom as apiCreateRoom,
   joinRoom as apiJoinRoom,
@@ -144,7 +144,6 @@ export function useRoom() {
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
-  // Persist display name
   const [savedName, setSavedName] = useState(() => {
     if (typeof window === 'undefined') return '';
     return localStorage.getItem(DISPLAY_NAME_KEY) ?? '';
@@ -161,10 +160,40 @@ export function useRoom() {
     stateRef.current = state;
   }, [state]);
 
-  // ─── Setup signaling + WebRTC + sync after join ────────────────────────────
+  const teardown = useCallback(() => {
+    if (heartbeatRef.current) {
+      clearInterval(heartbeatRef.current);
+      heartbeatRef.current = null;
+    }
+    if (pollRef.current) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+    syncRef.current?.destroy();
+    syncRef.current = null;
+    rtcRef.current?.destroy();
+    rtcRef.current = null;
+    signalingRef.current?.destroy();
+    signalingRef.current = null;
+    videoRef.current = null;
+  }, []);
 
   const setupPeerInfra = useCallback(
-    (roomId: string, peerId: string, isHost: boolean, hostPeerId: string, displayName: string) => {
+    async (
+      roomId: string,
+      peerId: string,
+      isHost: boolean,
+      hostPeerId: string,
+      displayName: string,
+    ) => {
+      teardown();
+
+      const [{ SignalingClient }, { WebRTCManager }, { PlaybackSync }] = await Promise.all([
+        import('@/lib/client/signaling'),
+        import('@/lib/client/webrtc-manager'),
+        import('@/lib/client/playback-sync'),
+      ]);
+
       const signaling = new SignalingClient();
       signalingRef.current = signaling;
 
@@ -181,11 +210,39 @@ export function useRoom() {
       const sync = new PlaybackSync(rtc, isHost);
       syncRef.current = sync;
 
-      sync.on('remote-play', () => {
-        videoRef.current?.play().catch(() => {});
+      // VideoPlayer may have already mounted (and called bindVideoRef) before
+      // this async setup completed — in that case syncRef.current was still
+      // null so PlaybackSync.bindVideo was never called. Bind now if the video
+      // element is already available to avoid the host's play/pause/seek being
+      // no-ops (this.video === null).
+      if (videoRef.current) {
+        sync.bindVideo(videoRef.current);
+      }
+
+      sync.on('remote-play', (positionMs: number) => {
+        const video = videoRef.current;
+        if (!video) return;
+        // Fallback seek for sync-response (periodic broadcast) where
+        // applyPosition may have skipped due to the drift threshold.
+        // For discrete play messages, seekExact already handled the seek.
+        if (Number.isFinite(video.duration) && video.duration !== Infinity) {
+          const drift = Math.abs(video.currentTime * 1000 - positionMs);
+          if (drift > 2000) {
+            video.currentTime = positionMs / 1000;
+          }
+        }
+        video.play().catch(() => {});
       });
-      sync.on('remote-pause', () => {
-        videoRef.current?.pause();
+      sync.on('remote-pause', (positionMs: number) => {
+        const video = videoRef.current;
+        if (!video) return;
+        if (Number.isFinite(video.duration) && video.duration !== Infinity) {
+          const drift = Math.abs(video.currentTime * 1000 - positionMs);
+          if (drift > 2000) {
+            video.currentTime = positionMs / 1000;
+          }
+        }
+        video.pause();
       });
       sync.on('remote-seek', (posMs) => {
         if (videoRef.current) videoRef.current.currentTime = posMs / 1000;
@@ -199,19 +256,24 @@ export function useRoom() {
         }
       });
 
-      // Signaling → WebRTC handshake
       signaling.on('peer-joined', (newPeerId, _displayName, members) => {
-        setState((s) => ({ ...s, members }));
+        setState((s) => ({
+          ...s,
+          members,
+          ...(newPeerId !== peerId ? { rtcStatus: 'connecting' as const } : {}),
+        }));
         if (newPeerId !== peerId) {
-          setState((s) => ({ ...s, rtcStatus: 'connecting' }));
           void rtc.connectToPeer(newPeerId);
         }
       });
 
       signaling.on('peer-left', (leftPeerId, members) => {
-        setState((s) => ({ ...s, members }));
         rtc.disconnectPeer(leftPeerId);
-        setState((s) => ({ ...s, rtcStatus: rtc.aggregateState }));
+        setState((s) => ({
+          ...s,
+          members,
+          rtcStatus: rtc.aggregateState,
+        }));
         if (!isHost && leftPeerId === hostPeerId) {
           void getRoom(roomId)
             .then(() => {})
@@ -232,7 +294,6 @@ export function useRoom() {
         }
       });
 
-      // Track aggregate WebRTC connection state
       rtc.on('connection-state', () => {
         setState((s) => ({ ...s, rtcStatus: rtc.aggregateState }));
       });
@@ -270,90 +331,103 @@ export function useRoom() {
           });
       }, ROOM_POLL_INTERVAL);
     },
-    [],
+    [teardown],
   );
-
-  const teardown = useCallback(() => {
-    if (heartbeatRef.current) {
-      clearInterval(heartbeatRef.current);
-      heartbeatRef.current = null;
-    }
-    if (pollRef.current) {
-      clearInterval(pollRef.current);
-      pollRef.current = null;
-    }
-    syncRef.current?.destroy();
-    syncRef.current = null;
-    rtcRef.current?.destroy();
-    rtcRef.current = null;
-    signalingRef.current?.destroy();
-    signalingRef.current = null;
-    videoRef.current = null;
-  }, []);
-
-  // ─── Public actions ────────────────────────────────────────────────────────
 
   const applyJoin = useCallback(
     (data: RoomCommandData, createdNew: boolean, displayName: string) => {
-    const isHost = createdNew || data.room?.hostPeerId === data.peerId;
-    const hostPeerId = data.room?.hostPeerId ?? data.peerId;
-    const members: WsRoomMember[] = (data.room?.members ?? []).map((m) => ({
-      peerId: m.peerId,
-      displayName: m.displayName,
-    }));
+      if (
+        stateRef.current.phase === 'joined' &&
+        stateRef.current.roomId === data.roomId &&
+        stateRef.current.peerId === data.peerId
+      ) {
+        return;
+      }
 
-    setState({
-      phase: 'joined',
-      roomId: data.roomId,
-      peerId: data.peerId,
-      isHost,
-      displayName,
-      members,
-      hostPeerId,
-      signalingConnected: false,
-      rtcStatus: 'idle',
-      videoSrc: null,
-      videoSource: null,
-      roomClosedByHost: false,
-    });
+      const isHost = createdNew || data.room?.hostPeerId === data.peerId;
+      const hostPeerId = data.room?.hostPeerId ?? data.peerId;
+      const members: WsRoomMember[] = (data.room?.members ?? []).map((m) => ({
+        peerId: m.peerId,
+        displayName: m.displayName,
+      }));
 
-    saveJoinedRoomSession(data, displayName, createdNew);
-    clearPendingRoomJoin();
-    setupPeerInfra(data.roomId, data.peerId, isHost, hostPeerId, displayName);
+      const nextState: RoomState = {
+        phase: 'joined',
+        roomId: data.roomId,
+        peerId: data.peerId,
+        isHost,
+        displayName,
+        members,
+        hostPeerId,
+        signalingConnected: false,
+        rtcStatus: 'idle',
+        videoSrc: null,
+        videoSource: null,
+        roomClosedByHost: false,
+      };
+
+      stateRef.current = nextState;
+      setState(nextState);
+
+      try {
+        saveJoinedRoomSession(data, displayName, createdNew);
+        clearPendingRoomJoin();
+      } catch {
+        /* sessionStorage best-effort */
+      }
+
+      void setupPeerInfra(data.roomId, data.peerId, isHost, hostPeerId, displayName);
     },
     [setupPeerInfra],
   );
 
   const handleCreate = useCallback(
     async (displayName: string) => {
+      stateRef.current = { ...initialState, phase: 'joining' };
       setState((s) => ({ ...s, phase: 'joining' }));
+      let data: RoomCommandData;
       try {
-        const data = await apiCreateRoom(displayName);
-        applyJoin(data, true, displayName);
+        data = await apiCreateRoom(displayName);
       } catch (e) {
+        stateRef.current = initialState;
         setState(initialState);
         throw e;
       }
+      applyJoin(data, true, displayName);
     },
     [applyJoin],
   );
 
   const handleJoin = useCallback(
     async (roomId: string, displayName: string, peerId?: string) => {
-      setState((s) => ({ ...s, phase: 'joining' }));
+      const normalizedRoomId = roomId.trim().toUpperCase();
+      if (stateRef.current.phase === 'joined' && stateRef.current.roomId === normalizedRoomId) {
+        return;
+      }
+
+      stateRef.current = { ...stateRef.current, phase: 'joining', roomId: normalizedRoomId };
+      setState((s) => ({ ...s, phase: 'joining', roomId: normalizedRoomId }));
+
+      let data: RoomCommandData;
       try {
-        const data = await apiJoinRoom(roomId, displayName, peerId);
-        applyJoin(data, false, displayName);
+        data = await apiJoinRoom(normalizedRoomId, displayName, peerId);
       } catch (e) {
+        stateRef.current = initialState;
         setState(initialState);
         throw e;
       }
+
+      if (stateRef.current.phase === 'joined' && stateRef.current.roomId === normalizedRoomId) {
+        return;
+      }
+
+      applyJoin(data, false, displayName);
     },
     [applyJoin],
   );
 
   const handleLeave = useCallback(async () => {
-    const { roomId, peerId } = state;
+    const { roomId, peerId } = stateRef.current;
     if (!roomId || !peerId) return;
     signalingRef.current?.leaveRoom();
     teardown();
@@ -364,8 +438,9 @@ export function useRoom() {
     }
     clearJoinedRoomSession();
     clearPendingRoomJoin();
+    stateRef.current = initialState;
     setState(initialState);
-  }, [state.roomId, state.peerId, teardown]);
+  }, [teardown]);
 
   const setVideoSource = useCallback((source: VideoSource, objectUrl?: string) => {
     const sync = syncRef.current;
@@ -413,7 +488,6 @@ export function useRoom() {
   const requestPause = useCallback(() => syncRef.current?.requestPause(), []);
   const requestSeek = useCallback((posMs: number) => syncRef.current?.requestSeek(posMs), []);
 
-  // When viewer gets a new video source, request sync once the video can play.
   useEffect(() => {
     if (!state.videoSrc || state.isHost || !state.hostPeerId) return;
     const video = videoRef.current;
@@ -431,7 +505,6 @@ export function useRoom() {
     }
   }, [state.videoSrc, state.isHost, state.hostPeerId]);
 
-  // Cleanup on unmount
   useEffect(() => {
     const leaveByBeacon = () => {
       const { roomId, peerId } = stateRef.current;

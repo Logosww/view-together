@@ -18,13 +18,35 @@ export type SignalingEvents = {
 
 type EventName = keyof SignalingEvents;
 
-const WS_BASE_URL = process.env.NEXT_PUBLIC_WS_URL ?? 'ws://localhost:3001';
 const MAX_RECONNECT_DELAY = 16_000;
 const BASE_RECONNECT_DELAY = 1_000;
 
+function resolveWsBaseUrl(): string {
+  const configured = process.env.NEXT_PUBLIC_WS_URL;
+
+  if (typeof window === 'undefined') {
+    return configured ?? 'ws://localhost:3001';
+  }
+
+  if (!configured) {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    return `${protocol}//localhost:3001`;
+  }
+
+  if (configured.startsWith('wss://') || configured.startsWith('ws://')) {
+    if (window.location.protocol === 'https:' && configured.startsWith('ws://')) {
+      return configured.replace(/^ws:\/\//, 'wss://');
+    }
+    return configured;
+  }
+
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  return `${protocol}//${configured.replace(/^\/\//, '')}`;
+}
+
 export class SignalingClient {
   private ws: WebSocket | null = null;
-  private listeners = new Map<EventName, Set<(...args: any[]) => void>>();
+  private listeners = new Map<EventName, Set<SignalingEvents[EventName]>>();
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectAttempts = 0;
   private intentionallyClosed = false;
@@ -42,7 +64,10 @@ export class SignalingClient {
   }
 
   private emit<E extends EventName>(event: E, ...args: Parameters<SignalingEvents[E]>) {
-    this.listeners.get(event)?.forEach((fn) => fn(...args));
+    const fns = this.listeners.get(event) as Set<SignalingEvents[E]> | undefined;
+    fns?.forEach((fn) => {
+      Reflect.apply(fn, undefined, args);
+    });
   }
 
   joinRoom(roomId: string, peerId: string, displayName: string) {
@@ -94,7 +119,7 @@ export class SignalingClient {
 
   private connect() {
     this.cleanup();
-    const ws = new WebSocket(`${WS_BASE_URL}/ws`);
+    const ws = new WebSocket(`${resolveWsBaseUrl()}/ws`);
     this.ws = ws;
 
     ws.onopen = () => {

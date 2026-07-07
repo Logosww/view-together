@@ -47,7 +47,7 @@ export function VideoSourceDialog({ onConfirm, disabled }: VideoSourceDialogProp
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button size="sm" variant="outline" disabled={disabled}>
+        <Button size="lg" variant="outline" disabled={disabled}>
           <Film className="size-4" />
           选择视频
         </Button>

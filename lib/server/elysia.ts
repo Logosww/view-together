@@ -123,7 +123,7 @@ export const backendApp = new Elysia({ prefix: '/api' })
       const peerId = body.peerId || makePeerId();
       const displayName = normalizeName(body.displayName);
 
-      await prisma.member.upsert({
+      const member = await prisma.member.upsert({
         where: {
           roomId_peerId: {
             roomId: room.id,
@@ -143,18 +143,14 @@ export const backendApp = new Elysia({ prefix: '/api' })
         },
       });
 
-      const snapshot = await prisma.room.findUnique({
-        where: { id: room.id },
-        include: {
-          members: true,
-          playback: true,
-        },
-      });
+      const members = room.members.some((m) => m.peerId === peerId)
+        ? room.members.map((m) => (m.peerId === peerId ? member : m))
+        : [...room.members, member];
 
       return ok({
         roomId: room.id,
         peerId,
-        room: snapshot,
+        room: { ...room, members },
       });
     },
     {
@@ -252,30 +248,27 @@ export const backendApp = new Elysia({ prefix: '/api' })
   .post(
     '/rooms/:roomId/playback',
     async ({ params, body }) => {
-      const room = await prisma.room.findUnique({
-        where: { id: params.roomId },
-      });
+      const [room, member] = await Promise.all([
+        prisma.room.findUnique({
+          where: { id: params.roomId },
+        }),
+        prisma.member.findUnique({
+          where: {
+            roomId_peerId: {
+              roomId: params.roomId,
+              peerId: body.peerId,
+            },
+          },
+        }),
+      ]);
 
       if (!room || room.status !== 'ACTIVE') {
         return biz('房间不存在或已关闭');
       }
 
-      const member = await prisma.member.findUnique({
-        where: {
-          roomId_peerId: {
-            roomId: params.roomId,
-            peerId: body.peerId,
-          },
-        },
-      });
-
       if (!member) {
         return biz('成员不在房间中');
       }
-
-      const current = await prisma.playbackState.findUnique({
-        where: { roomId: params.roomId },
-      });
 
       const playback = await prisma.playbackState.upsert({
         where: { roomId: params.roomId },
@@ -290,7 +283,7 @@ export const backendApp = new Elysia({ prefix: '/api' })
           status: body.status,
           positionMs: body.positionMs,
           updatedBy: body.peerId,
-          version: (current?.version ?? 0) + 1,
+          version: { increment: 1 },
         },
       });
 
