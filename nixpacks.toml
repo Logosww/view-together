@@ -1,9 +1,9 @@
 [phases.setup]
-nixPkgs = ["curl", "unzip"]
-cmds = ["curl -fsSL https://bun.sh/install | bash"]
+nixPkgs = ["bun"]
+cmds = ["rm package.json"]
 
 [phases.install]
-cmds = ["rm package.json && bun add elysia @elysiajs/cors"]
+cmds = ["bun add elysia @elysiajs/cors"]
 
 [phases.build]
 cmds = ["bun run build:ws"]
