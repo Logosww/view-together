@@ -42,6 +42,9 @@ export function HomeLobbyCard() {
           createdAt: Date.now(),
         }),
       );
+      toast.success('房间创建成功', {
+        description: `房间编号：${data.roomId}`,
+      });
       router.push(`/room/${data.roomId}`);
     } catch (error) {
       toast.error(getRequestErrorMessage(error));

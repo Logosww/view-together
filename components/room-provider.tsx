@@ -1,13 +1,17 @@
 'use client';
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { useParams } from 'next/navigation';
 import { toast } from 'sonner';
-import {
-  readJoinedRoomSession,
-  readPendingRoomJoin,
-  useRoom,
-} from '@/hooks/use-room';
+import { readJoinedRoomSession, readPendingRoomJoin, useRoom } from '@/hooks/use-room';
 import { getRequestErrorMessage } from '@/lib/client/http';
 
 type RoomContextValue = ReturnType<typeof useRoom> & {
@@ -55,10 +59,17 @@ export function RoomProvider({ children }: RoomProviderProps) {
       }
 
       await handleJoin(roomCode, displayName, pending?.peerId);
+      if (!pending) {
+        toast.success('已加入房间');
+      }
     } catch (error) {
       const recoveredSession = readJoinedRoomSession(roomCode);
       if (recoveredSession) {
-        resumeJoin(recoveredSession.roomCommand, recoveredSession.createdNew, recoveredSession.displayName);
+        resumeJoin(
+          recoveredSession.roomCommand,
+          recoveredSession.createdNew,
+          recoveredSession.displayName,
+        );
         return;
       }
 

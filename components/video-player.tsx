@@ -157,7 +157,7 @@ export function VideoPlayer({
   const controlsDisabled = !hasSrc || !!disabled;
 
   return (
-    <div ref={containerRef} className="space-y-4">
+    <div ref={containerRef} className="min-w-0 space-y-4">
       <div className="relative aspect-video overflow-hidden rounded-lg border bg-black">
         <video
           ref={videoRef}
@@ -169,40 +169,69 @@ export function VideoPlayer({
           onPause={handlePauseEvent}
         />
         {!hasSrc && (
-          <div className="absolute inset-0 flex items-center justify-center text-sm text-muted-foreground bg-linear-to-br from-card to-muted">
+          <div className="absolute inset-0 flex items-center justify-center bg-linear-to-br from-card to-muted px-4 text-center text-sm text-muted-foreground">
             {isHost ? '请选择视频源开始播放' : '等待房主设置视频源…'}
           </div>
         )}
       </div>
 
       <div className="space-y-4 rounded-lg border p-4">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-wrap items-center gap-2">
             {isHost ? (
-              <Button size="sm" onClick={handleTogglePlay} disabled={controlsDisabled}>
-                {playing ? <Pause className="size-4" /> : <Play className="size-4" />}
+              <Button
+                size="sm"
+                onClick={handleTogglePlay}
+                disabled={controlsDisabled}
+                className="flex-1 sm:flex-none"
+              >
+                {playing ? (
+                  <Pause className="size-4" aria-hidden="true" />
+                ) : (
+                  <Play className="size-4" aria-hidden="true" />
+                )}
                 {playing ? '暂停' : '播放'}
               </Button>
             ) : (
               <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
-                {playing ? <Play className="size-4" /> : <Pause className="size-4" />}
+                {playing ? (
+                  <Play className="size-4" aria-hidden="true" />
+                ) : (
+                  <Pause className="size-4" aria-hidden="true" />
+                )}
                 {playing ? '播放中' : '已暂停'}
               </span>
             )}
-            <Button size="sm" variant="ghost" onClick={handleFullscreen} disabled={controlsDisabled}>
-              {isFullscreen ? <Minimize className="size-4" /> : <Maximize className="size-4" />}
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={handleFullscreen}
+              disabled={controlsDisabled}
+              className="flex-1 sm:flex-none"
+            >
+              {isFullscreen ? (
+                <Minimize className="size-4" aria-hidden="true" />
+              ) : (
+                <Maximize className="size-4" aria-hidden="true" />
+              )}
               {isFullscreen ? '退出全屏' : '全屏'}
             </Button>
           </div>
-          <span ref={timeDisplayRef} className="text-sm text-muted-foreground">
+          <span
+            ref={timeDisplayRef}
+            className="text-sm tabular-nums text-muted-foreground"
+            aria-live="polite"
+          >
             00:00 / 00:00
           </span>
         </div>
 
         <div className="space-y-2">
-          <Label>播放进度</Label>
+          <Label htmlFor="seek-slider">播放进度</Label>
           {isHost ? (
             <Slider
+              id="seek-slider"
+              aria-label="播放进度"
               value={[progress]}
               max={100}
               step={0.1}
@@ -211,22 +240,34 @@ export function VideoPlayer({
               disabled={!hasSrc}
             />
           ) : (
-            <Progress value={progress} className={!hasSrc ? 'opacity-50' : undefined} />
+            <Progress
+              value={progress}
+              aria-label="播放进度"
+              className={!hasSrc ? 'opacity-50' : undefined}
+            />
           )}
         </div>
 
         <div className="space-y-2">
-          <Label className="flex items-center gap-2">
-            <button type="button" onClick={handleToggleMute} className="cursor-pointer">
+          <div className="flex items-center justify-between gap-2">
+            <Label htmlFor="volume-slider">音量</Label>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              onClick={handleToggleMute}
+              aria-label={muted || volume === 0 ? '取消静音' : '静音'}
+            >
               {muted || volume === 0 ? (
-                <VolumeX className="size-4" />
+                <VolumeX className="size-4" aria-hidden="true" />
               ) : (
-                <Volume2 className="size-4" />
+                <Volume2 className="size-4" aria-hidden="true" />
               )}
-            </button>
-            音量
-          </Label>
+            </Button>
+          </div>
           <Slider
+            id="volume-slider"
+            aria-label="音量"
             value={[muted ? 0 : volume]}
             max={100}
             step={1}

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, type FormEvent } from 'react';
-import { LogIn, Plus } from 'lucide-react';
+import { Clapperboard, LogIn, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -84,30 +84,42 @@ export function RoomLobby({
   };
 
   return (
-    <div className="flex min-h-[55vh] flex-col items-center justify-center gap-6 text-center">
-      <h2 className="text-2xl font-semibold">还未加入房间</h2>
-      <p className="text-sm text-muted-foreground">创建新房间，或加入已有房间。</p>
+    <div className="flex min-h-[40vh] flex-col items-center justify-center gap-5 text-center sm:min-h-[42vh]">
+      <div className="space-y-2">
+        <div className="inline-flex items-center gap-2 rounded-full bg-secondary px-3 py-1.5 text-secondary-foreground">
+          <Clapperboard className="size-5" aria-hidden="true" />
+          <h2 className="text-balance text-lg font-semibold sm:text-xl">还未加入房间</h2>
+        </div>
+        <p className="text-pretty text-sm text-muted-foreground">创建新房间，或加入已有房间。</p>
+      </div>
 
       <div className="w-full max-w-xs space-y-2">
         <Label htmlFor="display-name">你的昵称</Label>
         <Input
           id="display-name"
+          name="display-name"
+          autoComplete="nickname"
           value={displayName}
           onChange={(e) => onDisplayNameChange(e.target.value)}
-          placeholder="输入昵称"
+          placeholder="例如：小王…"
+          maxLength={24}
         />
       </div>
 
-      <div className="flex flex-col gap-3 sm:flex-row">
-        <Button onClick={handleCreate} disabled={loading}>
-          {isCreating ? <Spinner className="size-4" /> : <Plus className="size-4" />}
+      <div className="flex w-full max-w-xs flex-col gap-3 sm:max-w-none sm:flex-row sm:justify-center">
+        <Button onClick={handleCreate} disabled={loading} className="w-full sm:w-auto">
+          {isCreating ? (
+            <Spinner className="size-4" />
+          ) : (
+            <Plus className="size-4" aria-hidden="true" />
+          )}
           {isCreating ? '创建中…' : '创建房间'}
         </Button>
 
         <Dialog open={joinDialogOpen} onOpenChange={setJoinDialogOpen}>
           <DialogTrigger asChild>
-            <Button variant="outline" disabled={loading}>
-              <LogIn className="size-4" />
+            <Button variant="outline" disabled={loading} className="w-full sm:w-auto">
+              <LogIn className="size-4" aria-hidden="true" />
               加入房间
             </Button>
           </DialogTrigger>
@@ -121,10 +133,13 @@ export function RoomLobby({
                 <Label htmlFor="room-id-input">房间编号</Label>
                 <Input
                   id="room-id-input"
+                  name="room-code"
+                  autoComplete="off"
+                  inputMode="text"
+                  spellCheck={false}
                   value={joinRoomId}
                   onChange={(e) => setJoinRoomId(e.target.value)}
-                  placeholder="输入 4 位房间号或粘贴分享链接"
-                  autoFocus
+                  placeholder="例如：A1B2 或分享链接…"
                 />
               </div>
               <DialogFooter>

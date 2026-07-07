@@ -2,9 +2,9 @@
 
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
-import { Clapperboard, Copy, RefreshCw, Users, Wifi, WifiOff, X } from 'lucide-react';
+import { RefreshCw, Share2, Users, Wifi, WifiOff, X } from 'lucide-react';
 import { toast } from 'sonner';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -36,7 +36,10 @@ import { type RtcStatus } from '@/hooks/use-room';
 import { useRoomContext } from '@/components/room-provider';
 import { getRequestErrorMessage } from '@/lib/client/http';
 
-const RTC_STATUS_MAP: Record<RtcStatus, { label: string; variant: 'outline' | 'secondary' | 'destructive' }> = {
+const RTC_STATUS_MAP: Record<
+  RtcStatus,
+  { label: string; variant: 'outline' | 'secondary' | 'destructive' }
+> = {
   idle: { label: 'P2P 等待连接', variant: 'outline' },
   connecting: { label: 'P2P 连接中…', variant: 'secondary' },
   connected: { label: 'P2P 已连接', variant: 'outline' },
@@ -153,14 +156,14 @@ export function RoomPage({ roomCode }: RoomPageProps) {
     router.replace('/');
   };
 
-  const { phase, roomId, members, isHost, signalingConnected, rtcStatus, videoSrc } = state;
+  const { phase, members, isHost, signalingConnected, rtcStatus, videoSrc } = state;
   const isJoined = phase === 'joined';
   const loading = phase === 'joining';
   const rtcFailed = rtcStatus === 'failed';
   const rtcInfo = RTC_STATUS_MAP[rtcStatus];
 
   return (
-    <main className="min-h-screen bg-muted/40 px-4 py-6 md:px-8">
+    <main id="main-content" className="min-h-screen bg-muted/40 px-3 py-4 sm:px-4 sm:py-6 md:px-8">
       <Dialog open={nameDialogOpen} onOpenChange={() => {}}>
         <DialogContent
           showCloseButton={false}
@@ -176,11 +179,12 @@ export function RoomPage({ roomCode }: RoomPageProps) {
               <Label htmlFor="required-display-name">昵称</Label>
               <Input
                 id="required-display-name"
+                name="required-display-name"
+                autoComplete="nickname"
                 value={nameDraft}
                 onChange={(event) => setNameDraft(event.target.value)}
-                placeholder="请输入昵称"
+                placeholder="例如：小王…"
                 maxLength={24}
-                autoFocus
               />
             </div>
             <DialogFooter>
@@ -194,7 +198,9 @@ export function RoomPage({ roomCode }: RoomPageProps) {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>确定要离开房间吗？</AlertDialogTitle>
-            <AlertDialogDescription>房主离开后房间会立即关闭，确定要离开吗？</AlertDialogDescription>
+            <AlertDialogDescription>
+              房主离开后房间会立即关闭，确定要离开吗？
+            </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={isLeaving}>取消</AlertDialogCancel>
@@ -225,36 +231,54 @@ export function RoomPage({ roomCode }: RoomPageProps) {
         </DialogContent>
       </Dialog>
 
-      <div className="mx-auto flex w-full max-w-6xl flex-col gap-6">
-        <Card>
-          <CardHeader className="gap-4 md:flex md:flex-row md:items-center md:justify-between">
-            <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <Clapperboard className="size-4" />
-                <CardTitle>View Together</CardTitle>
-                <Badge variant="secondary">WebRTC P2P</Badge>
+      <div className="mx-auto flex w-full max-w-5xl flex-col gap-4">
+        <Card className="overflow-hidden gap-1.5">
+          <CardHeader className="gap-3 px-4 pb-1.5">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <CardTitle className="text-wrap text-base leading-tight sm:text-lg">
+                  View Together
+                </CardTitle>
+                <CardDescription className="mt-0.5 break-words">
+                  房间号：<span translate="no">{roomCode}</span>
+                </CardDescription>
+              </div>
+              <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
                 <ThemeToggle />
+                {isJoined && (
+                  <>
+                    <Button variant="outline" size="sm" onClick={handleCopyInvite} className="h-7">
+                      <Share2 className="size-3.5" aria-hidden="true" />
+                      分享
+                    </Button>
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      onClick={onLeaveRoomClick}
+                      disabled={isLeaving}
+                      className="h-7"
+                    >
+                      <X className="size-3.5" aria-hidden="true" />
+                      退出房间
+                    </Button>
+                  </>
+                )}
               </div>
-              <CardDescription>房间编号：{roomCode}</CardDescription>
             </div>
-            {isJoined && (
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge variant="outline">{roomId}</Badge>
-                {isHost && <Badge variant="secondary">房主</Badge>}
-                <Button variant="outline" size="sm" onClick={handleCopyInvite}>
-                  <Copy className="size-4" />
-                  分享
-                </Button>
-                <Button variant="destructive" size="sm" onClick={onLeaveRoomClick} disabled={isLeaving}>
-                  <X className="size-4" />
-                  退出房间
-                </Button>
-              </div>
-            )}
+            <div className="flex flex-wrap items-center gap-1.5">
+              <Badge variant="secondary" className="whitespace-nowrap">
+                WebRTC P2P
+              </Badge>
+              {isJoined && isHost && <Badge variant="secondary">房主</Badge>}
+            </div>
           </CardHeader>
-          <CardContent className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+          <CardContent className="flex min-w-0 flex-wrap items-center gap-1.5 px-4 pt-0 text-sm text-muted-foreground">
             <Badge variant="outline" className="gap-1">
-              {signalingConnected ? <Wifi className="size-3.5" /> : <WifiOff className="size-3.5" />}
+              {signalingConnected ? (
+                <Wifi className="size-3.5" aria-hidden="true" />
+              ) : (
+                <WifiOff className="size-3.5" aria-hidden="true" />
+              )}
               {signalingConnected ? '信令已连接' : '信令未连接'}
             </Badge>
             {isJoined && (
@@ -270,7 +294,10 @@ export function RoomPage({ roomCode }: RoomPageProps) {
                     disabled={isRetrying}
                     className="h-6 gap-1 px-2 text-xs"
                   >
-                    <RefreshCw className={`size-3 ${isRetrying ? 'animate-spin' : ''}`} />
+                    <RefreshCw
+                      className={`size-3 ${isRetrying ? 'animate-spin' : ''}`}
+                      aria-hidden="true"
+                    />
                     {isRetrying ? '重连中…' : '重试连接'}
                   </Button>
                 )}
@@ -282,10 +309,10 @@ export function RoomPage({ roomCode }: RoomPageProps) {
 
         {isJoined && rtcFailed && (
           <Card className="border-destructive bg-destructive/5">
-            <CardContent className="flex items-center justify-between gap-4 py-3">
-              <div className="space-y-0.5">
+            <CardContent className="flex flex-col items-start justify-between gap-4 p-4 sm:flex-row sm:items-center sm:p-6">
+              <div className="min-w-0 space-y-0.5">
                 <p className="text-sm font-medium text-destructive">P2P 连接失败</p>
-                <p className="text-xs text-muted-foreground">
+                <p className="text-pretty text-xs text-muted-foreground">
                   WebRTC 无法建立点对点连接，可能是网络代理（VPN/科学上网）或防火墙阻止了连接。
                   请尝试关闭代理后点击重试。
                 </p>
@@ -295,9 +322,12 @@ export function RoomPage({ roomCode }: RoomPageProps) {
                 size="sm"
                 onClick={onRetry}
                 disabled={isRetrying}
-                className="shrink-0"
+                className="w-full shrink-0 sm:w-auto"
               >
-                <RefreshCw className={`size-4 ${isRetrying ? 'animate-spin' : ''}`} />
+                <RefreshCw
+                  className={`size-4 ${isRetrying ? 'animate-spin' : ''}`}
+                  aria-hidden="true"
+                />
                 {isRetrying ? '重连中…' : '重试'}
               </Button>
             </CardContent>
@@ -307,15 +337,26 @@ export function RoomPage({ roomCode }: RoomPageProps) {
         {joinError && !loading && !isJoined && (
           <Card className="border-destructive bg-destructive/5">
             <CardContent className="flex flex-col items-start gap-4 py-4 sm:flex-row sm:items-center sm:justify-between">
-              <div className="space-y-1">
+              <div className="min-w-0 space-y-1">
                 <p className="text-sm font-medium text-destructive">加入房间失败</p>
-                <p className="text-xs text-muted-foreground">{joinError}</p>
+                <p className="break-words text-xs text-muted-foreground">{joinError}</p>
               </div>
-              <div className="flex gap-2">
-                <Button variant="outline" size="sm" onClick={retryJoin} disabled={isAutoJoining}>
+              <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={retryJoin}
+                  disabled={isAutoJoining}
+                  className="w-full sm:w-auto"
+                >
                   {isAutoJoining ? '重试中…' : '重试'}
                 </Button>
-                <Button variant="ghost" size="sm" onClick={() => router.replace('/')}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => router.replace('/')}
+                  className="w-full sm:w-auto"
+                >
                   返回首页
                 </Button>
               </div>
@@ -324,7 +365,7 @@ export function RoomPage({ roomCode }: RoomPageProps) {
         )}
 
         {loading && (
-          <div className="grid gap-6 lg:grid-cols-[2fr_1fr]">
+          <div className="grid min-w-0 gap-4 sm:gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(18rem,1fr)]">
             <Card>
               <CardHeader>
                 <Skeleton className="h-6 w-28" />
@@ -354,13 +395,13 @@ export function RoomPage({ roomCode }: RoomPageProps) {
         )}
 
         {isJoined && !loading && (
-          <div className="grid gap-6 lg:grid-cols-[2fr_1fr]">
+          <div className="grid min-w-0 gap-4 sm:gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(18rem,1fr)]">
             <Card>
               <CardHeader>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <CardTitle>播放画面</CardTitle>
-                    <CardDescription>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="min-w-0 space-y-1">
+                    <CardTitle className="text-wrap">播放画面</CardTitle>
+                    <CardDescription className="text-pretty">
                       {isHost ? '你是房主，操作将同步给所有成员。' : '播放由房主控制。'}
                     </CardDescription>
                   </div>
@@ -371,7 +412,7 @@ export function RoomPage({ roomCode }: RoomPageProps) {
                   )}
                 </div>
               </CardHeader>
-              <CardContent>
+              <CardContent className="min-w-0">
                 <VideoPlayer
                   src={videoSrc}
                   onVideoRef={bindVideoRef}
@@ -387,35 +428,39 @@ export function RoomPage({ roomCode }: RoomPageProps) {
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
-                  <Users className="size-4" />
+                  <Users className="size-4" aria-hidden="true" />
                   房间成员
                 </CardTitle>
                 <CardDescription>{members.length} 人在线</CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
-                {members.map((member) => (
-                  <div
-                    key={member.peerId}
-                    className="flex items-center justify-between rounded-lg border p-3"
-                  >
-                    <div className="flex items-center gap-3">
-                      <Avatar>
-                        <AvatarImage src="" />
-                        <AvatarFallback>{member.displayName.slice(0, 1)}</AvatarFallback>
-                      </Avatar>
-                      <div className="space-y-0.5">
-                        <p className="text-sm font-medium">{member.displayName}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {member.peerId === state.peerId ? '你' : ''}
-                          {member.peerId === state.hostPeerId ? ' (房主)' : ''}
-                        </p>
+                {members.length > 0 ? (
+                  members.map((member) => (
+                    <div
+                      key={member.peerId}
+                      className="flex min-w-0 items-center justify-between gap-3 rounded-lg border p-3"
+                    >
+                      <div className="flex min-w-0 items-center gap-3">
+                        <Avatar className="shrink-0">
+                          <AvatarFallback>{member.displayName.slice(0, 1)}</AvatarFallback>
+                        </Avatar>
+                        <div className="min-w-0 space-y-0.5">
+                          <p className="truncate text-sm font-medium">{member.displayName}</p>
+                          <p className="truncate text-xs text-muted-foreground">
+                            {member.peerId === state.peerId ? '你' : null}
+                          </p>
+                        </div>
                       </div>
+                      <Badge variant="secondary" className="shrink-0">
+                        {member.peerId === state.hostPeerId ? '房主' : '成员'}
+                      </Badge>
                     </div>
-                    <Badge variant="secondary">
-                      {member.peerId === state.hostPeerId ? '房主' : '成员'}
-                    </Badge>
+                  ))
+                ) : (
+                  <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+                    暂无成员在线。
                   </div>
-                ))}
+                )}
               </CardContent>
             </Card>
           </div>
