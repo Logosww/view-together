@@ -19,6 +19,88 @@ const HEARTBEAT_INTERVAL = 30_000;
 const ROOM_POLL_INTERVAL = 10_000;
 export const DISPLAY_NAME_KEY = 'view-together-display-name';
 export const PENDING_ROOM_JOIN_KEY = 'view-together-pending-room-join';
+export const JOINED_ROOM_SESSION_KEY = 'view-together-joined-room-session';
+const PENDING_JOIN_TTL_MS = 60_000;
+const JOINED_SESSION_TTL_MS = 12 * 60 * 60 * 1000;
+
+export type PendingRoomJoinData = {
+  roomId: string;
+  peerId: string;
+  displayName: string;
+  createdAt: number;
+};
+
+export type JoinedRoomSession = {
+  roomId: string;
+  roomCommand: RoomCommandData;
+  displayName: string;
+  createdNew: boolean;
+  joinedAt: number;
+};
+
+export function readPendingRoomJoin(roomCode: string): PendingRoomJoinData | null {
+  if (typeof window === 'undefined') return null;
+  const raw = sessionStorage.getItem(PENDING_ROOM_JOIN_KEY);
+  if (!raw) return null;
+  try {
+    const pending = JSON.parse(raw) as PendingRoomJoinData;
+    if (pending.roomId !== roomCode) return null;
+    if (Date.now() - pending.createdAt > PENDING_JOIN_TTL_MS) {
+      sessionStorage.removeItem(PENDING_ROOM_JOIN_KEY);
+      return null;
+    }
+    return pending;
+  } catch {
+    sessionStorage.removeItem(PENDING_ROOM_JOIN_KEY);
+    return null;
+  }
+}
+
+export function clearPendingRoomJoin() {
+  if (typeof window === 'undefined') return;
+  sessionStorage.removeItem(PENDING_ROOM_JOIN_KEY);
+}
+
+export function readJoinedRoomSession(roomCode: string): JoinedRoomSession | null {
+  if (typeof window === 'undefined') return null;
+  const raw = sessionStorage.getItem(JOINED_ROOM_SESSION_KEY);
+  if (!raw) return null;
+  try {
+    const session = JSON.parse(raw) as JoinedRoomSession;
+    if (session.roomId !== roomCode) return null;
+    if (Date.now() - session.joinedAt > JOINED_SESSION_TTL_MS) {
+      sessionStorage.removeItem(JOINED_ROOM_SESSION_KEY);
+      return null;
+    }
+    return session;
+  } catch {
+    sessionStorage.removeItem(JOINED_ROOM_SESSION_KEY);
+    return null;
+  }
+}
+
+export function saveJoinedRoomSession(
+  data: RoomCommandData,
+  displayName: string,
+  createdNew: boolean,
+) {
+  if (typeof window === 'undefined') return;
+  sessionStorage.setItem(
+    JOINED_ROOM_SESSION_KEY,
+    JSON.stringify({
+      roomId: data.roomId,
+      roomCommand: data,
+      displayName,
+      createdNew,
+      joinedAt: Date.now(),
+    } satisfies JoinedRoomSession),
+  );
+}
+
+export function clearJoinedRoomSession() {
+  if (typeof window === 'undefined') return;
+  sessionStorage.removeItem(JOINED_ROOM_SESSION_KEY);
+}
 
 export type RtcStatus = 'idle' | 'connecting' | 'connected' | 'failed';
 
@@ -235,6 +317,8 @@ export function useRoom() {
       roomClosedByHost: false,
     });
 
+    saveJoinedRoomSession(data, displayName, createdNew);
+    clearPendingRoomJoin();
     setupPeerInfra(data.roomId, data.peerId, isHost, hostPeerId, displayName);
     },
     [setupPeerInfra],
@@ -278,6 +362,8 @@ export function useRoom() {
     } catch {
       /* best-effort */
     }
+    clearJoinedRoomSession();
+    clearPendingRoomJoin();
     setState(initialState);
   }, [state.roomId, state.peerId, teardown]);
 
@@ -385,7 +471,7 @@ export function useRoom() {
     return () => {
       window.removeEventListener('beforeunload', onBeforeUnload);
       window.removeEventListener('pagehide', onPageHide);
-      onPageHide();
+      teardown();
     };
   }, [teardown]);
 
@@ -395,6 +481,7 @@ export function useRoom() {
     updateDisplayName,
     handleCreate,
     handleJoin,
+    resumeJoin: applyJoin,
     handleLeave,
     setVideoSource,
     retryConnection,

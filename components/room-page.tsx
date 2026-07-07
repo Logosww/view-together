@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Clapperboard, Copy, RefreshCw, Users, Wifi, WifiOff, X } from 'lucide-react';
 import { toast } from 'sonner';
@@ -32,7 +32,12 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { VideoPlayer } from '@/components/video-player';
 import { VideoSourceDialog } from '@/components/video-source';
-import { PENDING_ROOM_JOIN_KEY, useRoom, type RtcStatus } from '@/hooks/use-room';
+import {
+  readJoinedRoomSession,
+  readPendingRoomJoin,
+  useRoom,
+  type RtcStatus,
+} from '@/hooks/use-room';
 import { getRequestErrorMessage } from '@/lib/client/http';
 
 const RTC_STATUS_MAP: Record<RtcStatus, { label: string; variant: 'outline' | 'secondary' | 'destructive' }> = {
@@ -40,13 +45,6 @@ const RTC_STATUS_MAP: Record<RtcStatus, { label: string; variant: 'outline' | 's
   connecting: { label: 'P2P 连接中…', variant: 'secondary' },
   connected: { label: 'P2P 已连接', variant: 'outline' },
   failed: { label: 'P2P 连接失败', variant: 'destructive' },
-};
-
-type PendingJoinData = {
-  roomId: string;
-  peerId: string;
-  displayName: string;
-  createdAt: number;
 };
 
 type RoomPageProps = {
@@ -60,6 +58,7 @@ export function RoomPage({ roomCode }: RoomPageProps) {
     savedName,
     updateDisplayName,
     handleJoin,
+    resumeJoin,
     handleLeave,
     setVideoSource,
     retryConnection,
@@ -70,6 +69,7 @@ export function RoomPage({ roomCode }: RoomPageProps) {
   } = useRoom();
 
   const [isJoining, setIsJoining] = useState(false);
+  const [joinError, setJoinError] = useState<string | null>(null);
   const [isRetrying, setIsRetrying] = useState(false);
   const [isLeaving, setIsLeaving] = useState(false);
   const [leaveDialogOpen, setLeaveDialogOpen] = useState(false);
@@ -100,36 +100,50 @@ export function RoomPage({ roomCode }: RoomPageProps) {
     }
   }, [state.rtcStatus]);
 
+  const attemptAutoJoin = useCallback(async () => {
+    setJoinError(null);
+    setIsJoining(true);
+    const pending = readPendingRoomJoin(roomCode);
+    const displayName = pending?.displayName.trim() || normalizedName;
+
+    try {
+      const joinedSession = readJoinedRoomSession(roomCode);
+      if (joinedSession) {
+        resumeJoin(joinedSession.roomCommand, joinedSession.createdNew, joinedSession.displayName);
+        return;
+      }
+
+      let lastError: unknown;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          await handleJoin(roomCode, displayName, pending?.peerId);
+          return;
+        } catch (error) {
+          lastError = error;
+          if (attempt < 2) {
+            await new Promise((resolve) => setTimeout(resolve, 400 * (attempt + 1)));
+          }
+        }
+      }
+      throw lastError;
+    } catch (error) {
+      const message = getRequestErrorMessage(error);
+      setJoinError(message);
+      toast.error(message);
+    } finally {
+      setIsJoining(false);
+    }
+  }, [handleJoin, normalizedName, resumeJoin, roomCode]);
+
   useEffect(() => {
     if (!hasName || state.phase !== 'idle' || hasAutoJoinedRef.current) return;
     hasAutoJoinedRef.current = true;
-    setIsJoining(true);
-    const run = async () => {
-      try {
-        let cachedPeerId: string | undefined;
-        const raw = sessionStorage.getItem(PENDING_ROOM_JOIN_KEY);
-        if (raw) {
-          sessionStorage.removeItem(PENDING_ROOM_JOIN_KEY);
-          try {
-            const pending = JSON.parse(raw) as PendingJoinData;
-            if (pending.roomId === roomCode) {
-              cachedPeerId = pending.peerId;
-            }
-          } catch {
-            // ignore malformed payload
-          }
-        }
-        await handleJoin(roomCode, normalizedName, cachedPeerId);
-      } catch (error) {
-        hasAutoJoinedRef.current = false;
-        toast.error(getRequestErrorMessage(error));
-        router.replace('/');
-      } finally {
-        setIsJoining(false);
-      }
-    };
-    void run();
-  }, [handleJoin, hasName, normalizedName, roomCode, router, state.phase]);
+    void attemptAutoJoin();
+  }, [attemptAutoJoin, hasName, state.phase]);
+
+  const onRetryJoin = () => {
+    void attemptAutoJoin();
+  };
 
   const onRetry = async () => {
     setIsRetrying(true);
@@ -333,6 +347,25 @@ export function RoomPage({ roomCode }: RoomPageProps) {
                 <RefreshCw className={`size-4 ${isRetrying ? 'animate-spin' : ''}`} />
                 {isRetrying ? '重连中…' : '重试'}
               </Button>
+            </CardContent>
+          </Card>
+        )}
+
+        {joinError && !loading && !isJoined && (
+          <Card className="border-destructive bg-destructive/5">
+            <CardContent className="flex flex-col items-start gap-4 py-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="space-y-1">
+                <p className="text-sm font-medium text-destructive">加入房间失败</p>
+                <p className="text-xs text-muted-foreground">{joinError}</p>
+              </div>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" onClick={onRetryJoin} disabled={isJoining}>
+                  {isJoining ? '重试中…' : '重试'}
+                </Button>
+                <Button variant="ghost" size="sm" onClick={() => router.replace('/')}>
+                  返回首页
+                </Button>
+              </div>
             </CardContent>
           </Card>
         )}
