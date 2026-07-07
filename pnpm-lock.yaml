@@ -17,6 +17,9 @@ importers:
       '@libsql/client':
         specifier: ^0.17.4
         version: 0.17.4
+      '@libsql/isomorphic-ws':
+        specifier: ^0.1.5
+        version: 0.1.5
       '@prisma/adapter-libsql':
         specifier: ^7.8.0
         version: 7.8.0
@@ -99,6 +102,10 @@ importers:
       tw-animate-css:
         specifier: ^1.4.0
         version: 1.4.0
+    optionalDependencies:
+      '@libsql/linux-x64-gnu':
+        specifier: ^0.5.29
+        version: 0.5.29
 
 packages:
 

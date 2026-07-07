@@ -39,7 +39,7 @@ function sendTo(roomId: string, peerId: string, msg: WsServerMessage) {
 
 const port = Number(process.env.PORT ?? 3001);
 
-const server = new Elysia()
+new Elysia()
   .use(
     cors({
       origin: process.env.ALLOWED_ORIGIN?.split(',').map((item) => item.trim()) ?? true,
@@ -147,5 +147,3 @@ const server = new Elysia()
 const host = process.env.RAILWAY_PUBLIC_DOMAIN ?? `localhost:${port}`;
 const protocol = process.env.RAILWAY_PUBLIC_DOMAIN ? 'wss' : 'ws';
 console.log(`[WS] 信令服务器已启动 → ${protocol}://${host}/ws`);
-
-export default server;
