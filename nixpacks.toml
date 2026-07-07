@@ -1,11 +1,15 @@
+[variables]
+NIXPACKS_NODE_VERSION = "22"
+
 [phases.setup]
-nixPkgs = ["nodejs_26", "bun"]
+nixPkgs = ["curl", "unzip"]
+cmds = ["curl -fsSL https://bun.sh/install | bash"]
 
 [phases.install]
 cmds = ["corepack enable", "pnpm install --frozen-lockfile"]
 
 [phases.build]
-cmds = []
+cmds = ["bun run build:ws"]
 
 [start]
 cmd = "bun run start:ws"
