@@ -1,8 +1,8 @@
 [phases.setup]
-nixPkgs = ["bun"]
+nixPkgs = ["nodejs", "bun"]
 
 [phases.install]
-cmds = ["bun install --frozen-lockfile"]
+cmds = ["corepack enable", "pnpm install --frozen-lockfile"]
 
 [phases.build]
 cmds = []
