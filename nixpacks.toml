@@ -1,9 +1,8 @@
 [phases.setup]
 nixPkgs = ["bun"]
-cmds = ["rm package.json"]
 
 [phases.install]
-cmds = ["bun add elysia @elysiajs/cors"]
+cmds = ["rm package.json && bun add elysia @elysiajs/cors"]
 
 [phases.build]
 cmds = ["bun run build:ws"]
