@@ -1,12 +1,9 @@
-[variables]
-NIXPACKS_NODE_VERSION = "26"
-
 [phases.setup]
 nixPkgs = ["curl", "unzip"]
 cmds = ["curl -fsSL https://bun.sh/install | bash"]
 
 [phases.install]
-cmds = ["npm install --frozen-lockfile"]
+cmds = ["rm package.json && bun add elysia @elysiajs/cors"]
 
 [phases.build]
 cmds = ["bun run build:ws"]

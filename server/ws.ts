@@ -1,6 +1,6 @@
 import { Elysia } from 'elysia';
 import { cors } from '@elysiajs/cors';
-import type { WsClientMessage, WsServerMessage, WsRoomMember } from '../lib/shared/protocol';
+import type { WsClientMessage, WsServerMessage, WsRoomMember } from '@/lib/shared/protocol';
 
 type PeerEntry = {
   peerId: string;
