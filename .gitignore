@@ -17,6 +17,10 @@
 /.next/
 /out/
 
+# vercel
+/.vercel/
+vercel.json
+
 # production
 /build
 
@@ -34,8 +38,18 @@ yarn-error.log*
 .env*
 
 # vercel
+/.vercel/
 .vercel
 
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# prisma
+/prisma/generated
+/prisma/migrations
+/prisma/dev.db
+
+# railway
+railway.toml
+nixpacks.toml

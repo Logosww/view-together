@@ -1,0 +1,66 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../prisma/generated"
+}
+
+generator prismabox {
+  provider                    = "prismabox"
+  typeboxImportDependencyName = "elysia"
+  typeboxImportVariableName   = "t"
+  inputModel                  = true
+  output                      = "../prisma/generated/prismabox"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model Room {
+  id         String         @id
+  hostPeerId String
+  status     RoomStatus     @default(ACTIVE)
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
+  members    Member[]
+  playback   PlaybackState?
+}
+
+model Member {
+  id              String          @id @default(cuid())
+  roomId          String
+  peerId          String
+  displayName     String
+  joinedAt        DateTime        @default(now())
+  lastSeenAt      DateTime        @default(now())
+  connectionState ConnectionState @default(CONNECTED)
+  room            Room            @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  @@unique([roomId, peerId])
+}
+
+model PlaybackState {
+  roomId     String         @id
+  status     PlaybackStatus @default(PAUSED)
+  positionMs Int            @default(0)
+  updatedBy  String         @default("system")
+  version    Int            @default(1)
+  updatedAt  DateTime       @updatedAt
+  room       Room           @relation(fields: [roomId], references: [id], onDelete: Cascade)
+}
+
+enum RoomStatus {
+  ACTIVE
+  CLOSED
+}
+
+enum ConnectionState {
+  CONNECTING
+  CONNECTED
+  RECONNECTING
+  OFFLINE
+}
+
+enum PlaybackStatus {
+  PLAYING
+  PAUSED
+}
