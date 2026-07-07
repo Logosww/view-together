@@ -67,9 +67,9 @@ const server = new Elysia()
             rooms.set(roomId, new Map());
           }
           const room = rooms.get(roomId)!;
-          room.set(peerId, { peerId, displayName, ws: ws as any });
-          (ws as any).__peerId = peerId;
-          (ws as any).__roomId = roomId;
+          room.set(peerId, { peerId, displayName, ws });
+          (ws as unknown as { __peerId: string }).__peerId = peerId;
+          (ws as unknown as { __roomId: string }).__roomId = roomId;
 
           const members = getRoomMembers(roomId);
           broadcast(roomId, {
@@ -124,8 +124,8 @@ const server = new Elysia()
       }
     },
     close(ws) {
-      const peerId = (ws as any).__peerId as string | undefined;
-      const roomId = (ws as any).__roomId as string | undefined;
+      const peerId = (ws as unknown as { __peerId?: string }).__peerId as string | undefined;
+      const roomId = (ws as unknown as { __roomId?: string }).__roomId as string | undefined;
       if (!peerId || !roomId) return;
       const room = rooms.get(roomId);
       if (!room) return;
