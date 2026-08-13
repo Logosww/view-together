@@ -1,6 +1,7 @@
 import type {
   WsClientMessage,
   WsServerMessage,
+  ChatMessage,
   SignalPayload,
   VideoSource,
   WsRoomMember,
@@ -11,6 +12,8 @@ export type SignalingEvents = {
   'peer-left': (peerId: string, members: WsRoomMember[]) => void;
   signal: (fromPeerId: string, signal: SignalPayload) => void;
   'video-source': (source: VideoSource) => void;
+  'chat-message': (message: ChatMessage) => void;
+  'chat-error': (message: string) => void;
   connected: () => void;
   disconnected: () => void;
   error: (message: string) => void;
@@ -105,6 +108,15 @@ export class SignalingClient {
     });
   }
 
+  sendChatMessage(content: string) {
+    return this.send({
+      type: 'chat-message',
+      roomId: this.roomId,
+      peerId: this.peerId,
+      content,
+    });
+  }
+
   destroy() {
     this.intentionallyClosed = true;
     this.cleanup();
@@ -169,6 +181,12 @@ export class SignalingClient {
       case 'video-source':
         this.emit('video-source', msg.source);
         break;
+      case 'chat-message':
+        this.emit('chat-message', msg);
+        break;
+      case 'chat-error':
+        this.emit('chat-error', msg.message);
+        break;
       case 'error':
         this.emit('error', msg.message);
         break;
@@ -178,7 +196,9 @@ export class SignalingClient {
   private send(msg: WsClientMessage) {
     if (this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(msg));
+      return true;
     }
+    return false;
   }
 
   private scheduleReconnect() {

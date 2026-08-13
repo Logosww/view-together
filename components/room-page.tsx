@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
-import { RefreshCw, Share2, Users, Wifi, WifiOff, X } from 'lucide-react';
+import { MessageCircle, RefreshCw, Share2, Users, Wifi, WifiOff, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
@@ -28,8 +28,9 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Skeleton } from '@/components/ui/skeleton';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ThemeToggle } from '@/components/theme-toggle';
+import { RoomChat } from '@/components/room-chat';
 import { VideoPlayer } from '@/components/video-player';
 import { VideoSourceDialog } from '@/components/video-source';
 import { type RtcStatus } from '@/hooks/use-room';
@@ -63,6 +64,8 @@ export function RoomPage({ roomCode }: RoomPageProps) {
     requestPlay,
     requestPause,
     requestSeek,
+    sendChatMessage,
+    retrySendMessage,
     joinError,
     retryJoin,
     isAutoJoining,
@@ -156,7 +159,7 @@ export function RoomPage({ roomCode }: RoomPageProps) {
     router.replace('/');
   };
 
-  const { phase, members, isHost, signalingConnected, rtcStatus, videoSrc } = state;
+  const { phase, members, isHost, signalingConnected, rtcStatus, videoSrc, chatMessages } = state;
   const isJoined = phase === 'joined';
   const loading = phase === 'joining';
   const rtcFailed = rtcStatus === 'failed';
@@ -164,12 +167,18 @@ export function RoomPage({ roomCode }: RoomPageProps) {
 
   return (
     <main id="main-content" className="min-h-screen bg-muted/40 px-3 py-4 sm:px-4 sm:py-6 md:px-8">
-      <Dialog open={nameDialogOpen} onOpenChange={() => {}}>
-        <DialogContent
-          showCloseButton={false}
-          onEscapeKeyDown={(event) => event.preventDefault()}
-          onInteractOutside={(event) => event.preventDefault()}
-        >
+      <Dialog
+        open={nameDialogOpen}
+        onOpenChange={(open, eventDetails) => {
+          if (
+            !open &&
+            (eventDetails.reason === 'escape-key' || eventDetails.reason === 'outside-press')
+          ) {
+            eventDetails.cancel();
+          }
+        }}
+      >
+        <DialogContent showCloseButton={false}>
           <DialogHeader>
             <DialogTitle>设置昵称</DialogTitle>
             <DialogDescription>进入房间前，请先设置昵称。</DialogDescription>
@@ -215,12 +224,18 @@ export function RoomPage({ roomCode }: RoomPageProps) {
         </AlertDialogContent>
       </AlertDialog>
 
-      <Dialog open={state.roomClosedByHost} onOpenChange={() => {}}>
-        <DialogContent
-          showCloseButton={false}
-          onEscapeKeyDown={(event) => event.preventDefault()}
-          onInteractOutside={(event) => event.preventDefault()}
-        >
+      <Dialog
+        open={state.roomClosedByHost}
+        onOpenChange={(open, eventDetails) => {
+          if (
+            !open &&
+            (eventDetails.reason === 'escape-key' || eventDetails.reason === 'outside-press')
+          ) {
+            eventDetails.cancel();
+          }
+        }}
+      >
+        <DialogContent showCloseButton={false}>
           <DialogHeader>
             <DialogTitle>房间已关闭</DialogTitle>
             <DialogDescription>房主已离开房间，本房间已自动关闭。</DialogDescription>
@@ -364,39 +379,9 @@ export function RoomPage({ roomCode }: RoomPageProps) {
           </Card>
         )}
 
-        {loading && (
-          <div className="grid min-w-0 gap-4 sm:gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(18rem,1fr)]">
-            <Card>
-              <CardHeader>
-                <Skeleton className="h-6 w-28" />
-                <Skeleton className="h-4 w-48" />
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <Skeleton className="aspect-video w-full rounded-lg" />
-                <div className="space-y-3 rounded-lg border p-4">
-                  <Skeleton className="h-9 w-24" />
-                  <Skeleton className="h-4 w-full" />
-                  <Skeleton className="h-4 w-3/4" />
-                </div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader>
-                <Skeleton className="h-6 w-24" />
-                <Skeleton className="h-4 w-40" />
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <Skeleton className="h-14 w-full" />
-                <Skeleton className="h-14 w-full" />
-                <Skeleton className="h-14 w-full" />
-              </CardContent>
-            </Card>
-          </div>
-        )}
-
-        {isJoined && !loading && (
-          <div className="grid min-w-0 gap-4 sm:gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(18rem,1fr)]">
-            <Card>
+        {(isJoined || loading) && (
+          <div className="grid min-w-0 gap-4 sm:gap-6 lg:h-116 lg:grid-cols-[minmax(0,2fr)_minmax(18rem,1fr)]">
+            <Card className="min-h-0 overflow-hidden">
               <CardHeader>
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div className="min-w-0 space-y-1">
@@ -421,47 +406,76 @@ export function RoomPage({ roomCode }: RoomPageProps) {
                   onSeek={isHost ? requestSeek : undefined}
                   isHost={isHost}
                   disabled={rtcFailed}
+                  chatMessages={chatMessages}
+                  chatConnected={signalingConnected}
+                  onSendChatMessage={sendChatMessage}
                 />
               </CardContent>
             </Card>
 
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Users className="size-4" aria-hidden="true" />
-                  房间成员
-                </CardTitle>
-                <CardDescription>{members.length} 人在线</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {members.length > 0 ? (
-                  members.map((member) => (
-                    <div
-                      key={member.peerId}
-                      className="flex min-w-0 items-center justify-between gap-3 rounded-lg border p-3"
-                    >
-                      <div className="flex min-w-0 items-center gap-3">
-                        <Avatar className="shrink-0">
-                          <AvatarFallback>{member.displayName.slice(0, 1)}</AvatarFallback>
-                        </Avatar>
-                        <div className="min-w-0 space-y-0.5">
-                          <p className="truncate text-sm font-medium">{member.displayName}</p>
-                          <p className="truncate text-xs text-muted-foreground">
-                            {member.peerId === state.peerId ? '你' : null}
-                          </p>
-                        </div>
-                      </div>
-                      <Badge variant="secondary" className="shrink-0">
-                        {member.peerId === state.hostPeerId ? '房主' : '成员'}
-                      </Badge>
+            <Card className="min-h-0 overflow-hidden">
+              <Tabs defaultValue="chat" className="min-h-0 flex-1">
+                <CardHeader className="gap-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <CardTitle>房间互动</CardTitle>
+                      <CardDescription>{members.length} 人在线</CardDescription>
                     </div>
-                  ))
-                ) : (
-                  <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
-                    暂无成员在线。
+                    <TabsList aria-label="房间互动内容">
+                      <TabsTrigger value="chat" className="text-xs">
+                        <MessageCircle aria-hidden="true" />
+                        聊天室
+                      </TabsTrigger>
+                      <TabsTrigger value="members" className="text-xs">
+                        <Users aria-hidden="true" />
+                        成员
+                      </TabsTrigger>
+                    </TabsList>
                   </div>
-                )}
-              </CardContent>
+                </CardHeader>
+                <TabsContent value="chat" className="flex min-h-0 flex-col">
+                  <CardContent className="flex min-h-0 flex-1 flex-col">
+                    <RoomChat
+                      messages={chatMessages}
+                      currentPeerId={state.peerId}
+                      connected={signalingConnected}
+                      onSend={sendChatMessage}
+                      onRetry={retrySendMessage}
+                    />
+                  </CardContent>
+                </TabsContent>
+                <TabsContent value="members">
+                  <CardContent className="flex flex-col gap-3">
+                    {members.length > 0 ? (
+                      members.map((member) => (
+                        <div
+                          key={member.peerId}
+                          className="flex min-w-0 items-center justify-between gap-3 rounded-lg border p-3"
+                        >
+                          <div className="flex min-w-0 items-center gap-3">
+                            <Avatar className="shrink-0">
+                              <AvatarFallback>{member.displayName.slice(0, 1)}</AvatarFallback>
+                            </Avatar>
+                            <div className="min-w-0 space-y-0.5">
+                              <p className="truncate text-sm font-medium">{member.displayName}</p>
+                              <p className="truncate text-xs text-muted-foreground">
+                                {member.peerId === state.peerId ? '你' : null}
+                              </p>
+                            </div>
+                          </div>
+                          <Badge variant="secondary" className="shrink-0">
+                            {member.peerId === state.hostPeerId ? '房主' : '成员'}
+                          </Badge>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+                        暂无成员在线。
+                      </div>
+                    )}
+                  </CardContent>
+                </TabsContent>
+              </Tabs>
             </Card>
           </div>
         )}

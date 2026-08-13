@@ -13,7 +13,8 @@ import {
   type RoomCommandData,
 } from '@/lib/client/api';
 import { BusinessError } from '@/lib/client/http';
-import type { VideoSource, WsRoomMember } from '@/lib/shared/protocol';
+import { validateChatContent } from '@/lib/shared/chat';
+import type { ChatMessage, LocalChatMessage, VideoSource, WsRoomMember } from '@/lib/shared/protocol';
 
 const HEARTBEAT_INTERVAL = 30_000;
 const ROOM_POLL_INTERVAL = 10_000;
@@ -22,6 +23,7 @@ export const PENDING_ROOM_JOIN_KEY = 'view-together-pending-room-join';
 export const JOINED_ROOM_SESSION_KEY = 'view-together-joined-room-session';
 const PENDING_JOIN_TTL_MS = 60_000;
 const JOINED_SESSION_TTL_MS = 12 * 60 * 60 * 1000;
+const MAX_SESSION_CHAT_MESSAGES = 200;
 
 export type PendingRoomJoinData = {
   roomId: string;
@@ -116,6 +118,7 @@ export type RoomState = {
   rtcStatus: RtcStatus;
   videoSrc: string | MediaStream | null;
   videoSource: VideoSource | null;
+  chatMessages: LocalChatMessage[];
   roomClosedByHost: boolean;
 };
 
@@ -131,6 +134,7 @@ const initialState: RoomState = {
   rtcStatus: 'idle',
   videoSrc: null,
   videoSource: null,
+  chatMessages: [],
   roomClosedByHost: false,
 };
 
@@ -294,6 +298,36 @@ export function useRoom() {
         }
       });
 
+      signaling.on('chat-message', (message: ChatMessage) => {
+        setState((s) => {
+          // 乐观更新：匹配本地 sending 消息（同 peerId + content），替换为服务端确认消息
+          const matchIdx = s.chatMessages.findIndex(
+            (m) => m.status === 'sending' && m.peerId === message.peerId && m.content === message.content,
+          );
+          if (matchIdx >= 0) {
+            const next = [...s.chatMessages];
+            next[matchIdx] = { ...message, status: 'sent' };
+            return { ...s, chatMessages: next };
+          }
+          // 他人消息或无法匹配，直接追加
+          return {
+            ...s,
+            chatMessages: [...s.chatMessages, { ...message, status: 'sent' } as LocalChatMessage].slice(-MAX_SESSION_CHAT_MESSAGES),
+          };
+        });
+      });
+
+      signaling.on('chat-error', () => {
+        // 服务端拒绝：将最近一条 sending 消息标记为 failed
+        setState((s) => {
+          const idx = s.chatMessages.findLastIndex((m) => m.status === 'sending');
+          if (idx < 0) return s;
+          const next = [...s.chatMessages];
+          next[idx] = { ...next[idx], status: 'failed' };
+          return { ...s, chatMessages: next };
+        });
+      });
+
       rtc.on('connection-state', () => {
         setState((s) => ({ ...s, rtcStatus: rtc.aggregateState }));
       });
@@ -363,6 +397,7 @@ export function useRoom() {
         rtcStatus: 'idle',
         videoSrc: null,
         videoSource: null,
+        chatMessages: [],
         roomClosedByHost: false,
       };
 
@@ -488,6 +523,58 @@ export function useRoom() {
   const requestPause = useCallback(() => syncRef.current?.requestPause(), []);
   const requestSeek = useCallback((posMs: number) => syncRef.current?.requestSeek(posMs), []);
 
+  const sendChatMessage = useCallback((value: string) => {
+    const result = validateChatContent(value);
+    if (!result.ok) return false;
+
+    const current = stateRef.current;
+    const optimistic: LocalChatMessage = {
+      id: `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      peerId: current.peerId,
+      displayName: current.displayName,
+      content: result.content,
+      sentAt: Date.now(),
+      status: 'sending',
+    };
+    setState((s) => ({
+      ...s,
+      chatMessages: [...s.chatMessages, optimistic].slice(-MAX_SESSION_CHAT_MESSAGES),
+    }));
+
+    const sent = signalingRef.current?.sendChatMessage(result.content) ?? false;
+    if (!sent) {
+      setState((s) => ({
+        ...s,
+        chatMessages: s.chatMessages.map((m) =>
+          m.id === optimistic.id ? { ...m, status: 'failed' } : m,
+        ),
+      }));
+    }
+    return sent;
+  }, []);
+
+  const retrySendMessage = useCallback((messageId: string) => {
+    const msg = stateRef.current.chatMessages.find((m) => m.id === messageId);
+    if (!msg || msg.status !== 'failed') return;
+
+    setState((s) => ({
+      ...s,
+      chatMessages: s.chatMessages.map((m) =>
+        m.id === messageId ? { ...m, status: 'sending' } : m,
+      ),
+    }));
+
+    const sent = signalingRef.current?.sendChatMessage(msg.content) ?? false;
+    if (!sent) {
+      setState((s) => ({
+        ...s,
+        chatMessages: s.chatMessages.map((m) =>
+          m.id === messageId ? { ...m, status: 'failed' } : m,
+        ),
+      }));
+    }
+  }, []);
+
   useEffect(() => {
     if (!state.videoSrc || state.isHost || !state.hostPeerId) return;
     const video = videoRef.current;
@@ -562,5 +649,7 @@ export function useRoom() {
     requestPlay,
     requestPause,
     requestSeek,
+    sendChatMessage,
+    retrySendMessage,
   };
 }

@@ -4,6 +4,21 @@ export type VideoSourceUrl = { type: 'url'; url: string };
 export type VideoSourceFile = { type: 'file'; name: string };
 export type VideoSource = VideoSourceUrl | VideoSourceFile;
 
+// ── Room chat ───────────────────────────────────────────────────────────────
+
+export type ChatMessage = {
+  id: string;
+  peerId: string;
+  displayName: string;
+  content: string;
+  sentAt: number;
+};
+
+/** 客户端扩展：消息投递状态，用于乐观更新与失败重试。 */
+export type LocalChatMessage = ChatMessage & {
+  status: 'sending' | 'sent' | 'failed';
+};
+
 // ── Client → Server (WebSocket) ─────────────────────────────────────────────
 
 export type WsClientJoinRoom = {
@@ -34,11 +49,19 @@ export type WsClientVideoSource = {
   source: VideoSource;
 };
 
+export type WsClientChatMessage = {
+  type: 'chat-message';
+  roomId: string;
+  peerId: string;
+  content: string;
+};
+
 export type WsClientMessage =
   | WsClientJoinRoom
   | WsClientLeaveRoom
   | WsClientSignal
-  | WsClientVideoSource;
+  | WsClientVideoSource
+  | WsClientChatMessage;
 
 // ── Server → Client (WebSocket) ─────────────────────────────────────────────
 
@@ -68,6 +91,15 @@ export type WsServerVideoSource = {
   source: VideoSource;
 };
 
+export type WsServerChatMessage = ChatMessage & {
+  type: 'chat-message';
+};
+
+export type WsServerChatError = {
+  type: 'chat-error';
+  message: string;
+};
+
 export type WsServerError = {
   type: 'error';
   message: string;
@@ -78,6 +110,8 @@ export type WsServerMessage =
   | WsServerPeerLeft
   | WsServerSignal
   | WsServerVideoSource
+  | WsServerChatMessage
+  | WsServerChatError
   | WsServerError;
 
 // ── WebRTC signaling payload ────────────────────────────────────────────────

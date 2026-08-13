@@ -9,7 +9,6 @@ import {
   useRef,
   useState,
 } from 'react';
-import { useParams } from 'next/navigation';
 import { toast } from 'sonner';
 import { readJoinedRoomSession, readPendingRoomJoin, useRoom } from '@/hooks/use-room';
 import { getRequestErrorMessage } from '@/lib/client/http';
@@ -23,14 +22,11 @@ type RoomContextValue = ReturnType<typeof useRoom> & {
 const RoomContext = createContext<RoomContextValue | null>(null);
 
 type RoomProviderProps = {
+  roomCode: string;
   children: React.ReactNode;
 };
 
-export function RoomProvider({ children }: RoomProviderProps) {
-  const params = useParams();
-  const roomCode = String(params.code ?? '')
-    .trim()
-    .toUpperCase();
+export function RoomProvider({ roomCode, children }: RoomProviderProps) {
   const room = useRoom();
   const { state, savedName, handleJoin, resumeJoin } = room;
 

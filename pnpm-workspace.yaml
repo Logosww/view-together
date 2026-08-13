@@ -6,5 +6,7 @@ allowBuilds:
 ignoredBuiltDependencies:
   - sharp
   - unrs-resolver
+minimumReleaseAgeExclude:
+  - sonner@2.0.8
 overrides:
   zod: ^3.25.76

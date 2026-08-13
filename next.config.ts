@@ -10,7 +10,12 @@ const libsqlPackages = [
 ]
 
 const nextConfig: NextConfig = {
+  cacheComponents: true,
+  partialPrefetching: true,
   reactCompiler: true,
+  experimental: {
+    turbopackRustReactCompiler: true,
+  },
   serverExternalPackages: ["@prisma/client", "prisma", ...libsqlPackages],
 }
 

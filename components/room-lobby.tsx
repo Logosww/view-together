@@ -117,11 +117,9 @@ export function RoomLobby({
         </Button>
 
         <Dialog open={joinDialogOpen} onOpenChange={setJoinDialogOpen}>
-          <DialogTrigger asChild>
-            <Button variant="outline" disabled={loading} className="w-full sm:w-auto">
-              <LogIn className="size-4" aria-hidden="true" />
-              加入房间
-            </Button>
+          <DialogTrigger render={<Button variant="outline" disabled={loading} className="w-full sm:w-auto" />}>
+            <LogIn className="size-4" aria-hidden="true" />
+            加入房间
           </DialogTrigger>
           <DialogContent>
             <DialogHeader>

@@ -139,6 +139,22 @@
   }
 }
 
+@keyframes chat-bubble {
+  0% {
+    opacity: 0;
+    transform: translateY(0.5rem);
+  }
+  8%,
+  90% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-0.25rem);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   html {
     scroll-behavior: auto;
